@@ -6,7 +6,55 @@ import cv2
 import pandas as pd
 import plotly.graph_objects as go
 from streamlit_image_coordinates import streamlit_image_coordinates
-from src.detection.laser_spot_detector import LaserSpotDetector
+class LaserSpotDetector:
+    def __init__(self, min_area=8, max_area=5000):
+        self.min_area = min_area
+        self.max_area = max_area
+
+    def detect(self, frame):
+        # Convert image to HSV for brightness/saturation based detection
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+        # Bright, relatively low-saturation pixels
+        lower = np.array([0, 0, 180], dtype=np.uint8)
+        upper = np.array([180, 120, 255], dtype=np.uint8)
+
+        mask = cv2.inRange(hsv, lower, upper)
+
+        # Remove small noise
+        kernel = np.ones((3, 3), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
+        contours, _ = cv2.findContours(
+            mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+
+        candidates = []
+
+        for contour in contours:
+            area = cv2.contourArea(contour)
+
+            if self.min_area <= area <= self.max_area:
+                moments = cv2.moments(contour)
+
+                if moments["m00"] != 0:
+                    cx = moments["m10"] / moments["m00"]
+                    cy = moments["m01"] / moments["m00"]
+
+                    candidates.append((area, cx, cy))
+
+        if not candidates:
+            return None
+
+        # Select the brightest/largest valid candidate
+        area, cx, cy = max(candidates, key=lambda x: x[0])
+
+        return {
+            "centroid": (float(cx), float(cy)),
+            "area": float(area),
+        }
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
